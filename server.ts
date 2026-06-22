@@ -36,6 +36,38 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  app.get("/api/download", async (req, res) => {
+    try {
+      const { exec } = await import("child_process");
+      const fs = await import("fs");
+      const outputPath = path.join("/tmp", `yiren-translate-${Date.now()}.tar.gz`);
+
+      // Compress workspace files excluding heavy directories
+      const relativeCmd = `tar --exclude="node_modules" --exclude="dist" --exclude=".git" --exclude="*.tar.gz" -czf "${outputPath}" .`;
+      const cwd = process.cwd();
+
+      exec(relativeCmd, { cwd }, (error, stdout, stderr) => {
+        if (error) {
+          console.error("Tar compression failed:", error, stderr);
+          return res.status(500).json({ error: "服务器文件打包失败，请联系管理员或稍后重试。" });
+        }
+
+        res.download(outputPath, "yiren-translate-project.tar.gz", (err) => {
+          if (err) {
+            console.error("Download transmission completed with error or aborted:", err);
+          }
+          // Safely delete the temporary tar.gz file after response has finished
+          fs.unlink(outputPath, (unlinkErr) => {
+            if (unlinkErr) console.error("Failed to delete temp file:", unlinkErr);
+          });
+        });
+      });
+    } catch (err: any) {
+      console.error("Download API error:", err);
+      res.status(500).json({ error: "构建导出文件包时遇到内部异常。" });
+    }
+  });
+
   app.post("/api/ocr", async (req, res) => {
     try {
       const { image, mimeType } = req.body;

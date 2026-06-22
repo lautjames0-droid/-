@@ -23,7 +23,8 @@ import {
   Upload,
   Image,
   FileText,
-  Settings
+  Settings,
+  Download
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -81,6 +82,34 @@ export default function App() {
   const [customPrompt, setCustomPrompt] = useState(() => {
     return localStorage.getItem("yiren_custom_prompt") || "";
   });
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleDownloadProject = async () => {
+    if (isExporting) return;
+    setIsExporting(true);
+    try {
+      const response = await fetch("/api/download");
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || "打包下载请求失败");
+      }
+      // Get the binary blob
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "yiren-translate-project.tar.gz";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError("全代码工程打包下载失败: " + err.message);
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -699,6 +728,21 @@ Return your result strictly in the requested JSON structure. Do not include mark
           >
             <Settings className="w-3.5 h-3.5" />
             <span>设置</span>
+          </button>
+
+          {/* Download Project Button */}
+          <button
+            onClick={handleDownloadProject}
+            disabled={isExporting}
+            className={`px-3 sm:px-4 py-1.5 text-xs font-bold rounded-full border transition-all cursor-pointer select-none flex items-center gap-1.5 shadow-3xs ${
+              isExporting
+                ? "bg-slate-100 border-slate-200 text-slate-400 cursor-not-allowed"
+                : "bg-indigo-600 border-indigo-600 text-white hover:bg-indigo-700/95 hover:shadow-2xs active:scale-97"
+            }`}
+            title="一键打包并下载全部项目源代码"
+          >
+            <Download className={`w-3.5 h-3.5 ${isExporting ? "animate-bounce" : ""}`} />
+            <span>{isExporting ? "正在打包..." : "下载代码"}</span>
           </button>
         </div>
       </nav>
