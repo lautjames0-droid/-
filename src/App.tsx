@@ -66,15 +66,31 @@ export default function App() {
 
   // Custom PWA & LLM Settings States
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [llmMode, setLlmMode] = useState<"system" | "client">(() => {
-    return (localStorage.getItem("yiren_llm_mode") as "system" | "client") || "system";
-  });
   const [clientApiKey, setClientApiKey] = useState(() => {
     return localStorage.getItem("yiren_client_api_key") || "";
+  });
+  const [apiProvider, setApiProvider] = useState<"gemini" | "openai" | "deepseek" | "custom">(() => {
+    return (localStorage.getItem("yiren_api_provider") as any) || "gemini";
+  });
+  const [customEndpoint, setCustomEndpoint] = useState(() => {
+    return localStorage.getItem("yiren_custom_endpoint") || "";
   });
   const [selectedModel, setSelectedModel] = useState(() => {
     return localStorage.getItem("yiren_selected_model") || "gemini-2.5-flash";
   });
+
+  const handleProviderChange = (provider: "gemini" | "openai" | "deepseek" | "custom") => {
+    setApiProvider(provider);
+    if (provider === "gemini") {
+      setSelectedModel("gemini-2.5-flash");
+    } else if (provider === "openai") {
+      setSelectedModel("gpt-4o-mini");
+    } else if (provider === "deepseek") {
+      setSelectedModel("deepseek-chat");
+    } else {
+      setSelectedModel("");
+    }
+  };
   const [temperature, setTemperature] = useState(() => {
     const saved = localStorage.getItem("yiren_temperature");
     return saved ? parseFloat(saved) : 0.3;
@@ -275,12 +291,11 @@ export default function App() {
       let finalTranslatedText = "";
       let finalDetectedLanguage = "";
 
-      if (llmMode === "client") {
-        if (!clientApiKey.trim()) {
-          throw new Error("您已启用了「个性化独立配置」模式，但未设置 Gemini API 密钥。请点击右上角「设置」图标输入并保存您的 API 密钥以开始翻译。");
-        }
+      if (!clientApiKey.trim()) {
+        throw new Error("检测到您尚未设置 API 密钥。请点击页面右上角「设置」或提示栏「立即配置 API」配置您的密钥以开始翻译。");
+      }
 
-        const langNames: Record<string, string> = {
+      const langNames: Record<string, string> = {
           auto: "检测语言 (Auto Detect)",
           zh: "中文 (Chinese)",
           en: "英文 (English)",
@@ -324,71 +339,126 @@ Return your result strictly in the requested JSON structure. Do not include mark
   "detectedLanguage": "the ISO 639-1 code of the original text, must be one of 'zh', 'en', 'id', 'th', 'vi', 'fil', 'ru', 'es', or 'pt'"
 }`;
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${clientApiKey}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: temperature,
-              responseMimeType: "application/json",
-              responseSchema: {
-                type: "OBJECT",
-                properties: {
-                  translatedText: { type: "STRING" },
-                  detectedLanguage: {
-                    type: "STRING",
-                    description: "The ISO 639-1 language code detected for the original text. Must be one of 'zh', 'en', 'id', 'th', 'vi', 'fil', 'ru', 'es', or 'pt'."
-                  }
-                },
-                required: ["translatedText", "detectedLanguage"]
+        if (apiProvider === "gemini") {
+          const url = `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${clientApiKey}`;
+          const res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: temperature,
+                responseMimeType: "application/json",
+                responseSchema: {
+                  type: "OBJECT",
+                  properties: {
+                    translatedText: { type: "STRING" },
+                    detectedLanguage: {
+                      type: "STRING",
+                      description: "The ISO 639-1 language code detected for the original text. Must be one of 'zh', 'en', 'id', 'th', 'vi', 'fil', 'ru', 'es', or 'pt'."
+                    }
+                  },
+                  required: ["translatedText", "detectedLanguage"]
+                }
+              },
+              systemInstruction: {
+                parts: [{
+                  text: "You are a professional translator expert in multiple languages. Your goal is to deliver beautiful, fluid, and culturally-accurate translations matching the translation style selected by the user."
+                }]
               }
-            },
-            systemInstruction: {
-              parts: [{
-                text: "You are a professional translator expert in multiple languages. Your goal is to deliver beautiful, fluid, and culturally-accurate translations matching the translation style selected by the user."
-              }]
-            }
-          })
-        });
+            })
+          });
 
-        if (!res.ok) {
-          const errBody = await res.json().catch(() => ({}));
-          const errMsg = errBody?.error?.message || `HTTP 错误: ${res.status}`;
-          throw new Error(`直接连接 Gemini 失败: ${errMsg}`);
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            const errMsg = errBody?.error?.message || `HTTP 错误: ${res.status}`;
+            throw new Error(`直接连接 Gemini 失败: ${errMsg}`);
+          }
+
+          const resData = await res.json();
+          const textResponse = resData?.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!textResponse) {
+            throw new Error("Gemini API 返回了空响应，请检查密钥或翻译文本。");
+          }
+
+          const parsed = JSON.parse(textResponse);
+          finalTranslatedText = parsed.translatedText;
+          finalDetectedLanguage = parsed.detectedLanguage;
+        } else {
+          // OpenAI, DeepSeek, or Custom OpenAI-compatible endpoint
+          let baseUrl = "https://api.openai.com/v1";
+          if (apiProvider === "deepseek") {
+            baseUrl = "https://api.deepseek.com/v1";
+          } else if (apiProvider === "custom") {
+            baseUrl = customEndpoint.trim() || "https://api.openai.com/v1";
+          }
+          // Remove trailing slash
+          if (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.slice(0, -1);
+          }
+
+          const url = `${baseUrl}/chat/completions`;
+          const chatHeaders: Record<string, string> = {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${clientApiKey}`
+          };
+
+          const chatBody: any = {
+            model: selectedModel || "gpt-4o-mini",
+            messages: [
+              {
+                role: "system",
+                content: "You are a professional translator expert in multiple languages. Your goal is to deliver beautiful, fluid, and culturally-accurate translations matching the translation style selected by the user. You must output a JSON object containing: {\"translatedText\": \"...\", \"detectedLanguage\": \"...\"}, where detectedLanguage is one of 'zh', 'en', 'id', 'th', 'vi', 'fil', 'ru', 'es', 'pt'."
+              },
+              {
+                role: "user",
+                content: prompt
+              }
+            ],
+            temperature: temperature
+          };
+
+          if (apiProvider === "openai") {
+            chatBody.response_format = { type: "json_object" };
+          }
+
+          const res = await fetch(url, {
+            method: "POST",
+            headers: chatHeaders,
+            body: JSON.stringify(chatBody)
+          });
+
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            const errMsg = errBody?.error?.message || `HTTP 错误: ${res.status}`;
+            throw new Error(`直接连接 ${apiProvider} 失败: ${errMsg}`);
+          }
+
+          const resData = await res.json();
+          const textResponse = resData?.choices?.[0]?.message?.content;
+          if (!textResponse) {
+            throw new Error(`${apiProvider} API 返回了空响应，请检查密钥或翻译文本。`);
+          }
+
+          let cleanedJson = textResponse.trim();
+          if (cleanedJson.startsWith("```")) {
+            cleanedJson = cleanedJson.replace(/^```(json)?\n?/, "");
+          }
+          if (cleanedJson.endsWith("```")) {
+            cleanedJson = cleanedJson.replace(/\n?```$/, "");
+          }
+          cleanedJson = cleanedJson.trim();
+
+          try {
+            const parsed = JSON.parse(cleanedJson);
+            finalTranslatedText = parsed.translatedText;
+            finalDetectedLanguage = parsed.detectedLanguage;
+          } catch (parseErr) {
+            console.error("JSON parse failed, falling back to plaintext:", cleanedJson);
+            finalTranslatedText = textResponse;
+            finalDetectedLanguage = src === "auto" ? "zh" : src; // fallback
+          }
         }
-
-        const resData = await res.json();
-        const textResponse = resData?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!textResponse) {
-          throw new Error("Gemini API 返回了空响应，请检查密钥或翻译文本。");
-        }
-
-        const parsed = JSON.parse(textResponse);
-        finalTranslatedText = parsed.translatedText;
-        finalDetectedLanguage = parsed.detectedLanguage;
-      } else {
-        const response = await fetch("/api/translate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: trimmed,
-            sourceLang: src,
-            targetLang: tgt,
-            style: style
-          })
-        });
-
-        if (!response.ok) {
-          const errData = await response.json().catch(() => ({}));
-          throw new Error(errData.error || `服务器状态: ${response.status}`);
-        }
-
-        const data = await response.json();
-        finalTranslatedText = data.translatedText;
-        finalDetectedLanguage = data.detectedLanguage;
-      }
 
       setTranslatedText(finalTranslatedText);
       setDetectedLang(finalDetectedLanguage);
@@ -749,6 +819,30 @@ Return your result strictly in the requested JSON structure. Do not include mark
 
       {/* Main Translation Workspace */}
       <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 pt-6 flex flex-col gap-6">
+
+        {/* API Key Missing Alert Banner */}
+        {!clientApiKey && (
+          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4.5 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-3xs">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 bg-indigo-100/80 rounded-xl flex items-center justify-center text-indigo-600 shrink-0 mt-0.5">
+                <Settings className="w-5 h-5 animate-spin" style={{ animationDuration: '6s' }} />
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-indigo-950">欢迎开启 100% 独立隐私翻译！</h3>
+                <p className="text-xs text-indigo-700/90 mt-1 leading-relaxed">
+                  本产品已完全下线系统内置中转，切换为 <b>纯本地客户端（零服务器）直连模式</b>。安全无痕，零数据上云。请点击页面右上角 <b>「设置」</b> 输入您的 API 密钥（Gemini / OpenAI / DeepSeek 或任意兼容中转接口），即可无缝开始轻量、自由的顶级智能翻译。
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700/95 rounded-xl cursor-pointer shadow-xs transition-colors shrink-0 flex items-center gap-1.5"
+            >
+              <Settings className="w-3.5 h-3.5" />
+              立即配置 API
+            </button>
+          </div>
+        )}
 
         {/* Languages Selection Row - Aligned with below left (input) and right (output) panels */}
         <div className="relative grid grid-cols-2 gap-4 sm:gap-6 items-center -mb-2 mt-2 w-full">
@@ -1233,58 +1327,91 @@ Return your result strictly in the requested JSON structure. Do not include mark
               </div>
 
               <div className="p-6 overflow-y-auto space-y-5">
-                {/* Connection Mode */}
+                {/* API Provider Selector */}
                 <div>
-                  <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">连接与服务器模式</label>
-                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200/50">
-                    <button
-                      type="button"
-                      onClick={() => setLlmMode("system")}
-                      className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                        llmMode === "system"
-                          ? "bg-white text-slate-800 shadow-3xs"
-                          : "text-slate-500 hover:text-slate-700"
-                      }`}
-                    >
-                      ☁️ 系统内置服务 (推荐)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setLlmMode("client")}
-                      className={`py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
-                        llmMode === "client"
-                          ? "bg-white text-indigo-600 shadow-3xs"
-                          : "text-slate-500 hover:text-slate-700"
-                      }`}
-                    >
-                      🔌 独立配置 (零服务器)
-                    </button>
-                  </div>
-                  <p className="text-[10px] text-slate-400 mt-1.5 leading-relaxed">
-                    {llmMode === "system" 
-                      ? "默认使用系统提供的共享中转服务进行安全翻译，随时可用，不需要任何额外配置。" 
-                      : "通过您自己申请的 Google Gemini API 密钥在浏览器本地进行直接查询，100% 独立，不需要任何服务器资源，完美适合本地安装使用。"}
-                  </p>
-                </div>
+                  <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-2">模型接口供应商 (API Provider)</label>
+                      <div className="grid grid-cols-4 gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/50">
+                        {(["gemini", "openai", "deepseek", "custom"] as const).map((prov) => (
+                          <button
+                            key={prov}
+                            type="button"
+                            onClick={() => handleProviderChange(prov)}
+                            className={`py-1.5 px-2 text-[10px] font-bold rounded-lg transition-all cursor-pointer text-center select-none ${
+                              apiProvider === prov
+                                ? "bg-white text-indigo-600 shadow-3xs"
+                                : "text-slate-500 hover:text-slate-700"
+                            }`}
+                          >
+                            {prov === "gemini" ? "Gemini" : prov === "openai" ? "OpenAI" : prov === "deepseek" ? "DeepSeek" : "自定义"}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">
+                        支持任意 OpenAI 兼容中转站，极方便规避 Google API 限制与付款障碍。
+                      </p>
+                    </div>
 
-                {llmMode === "client" && (
-                  <>
-                    {/* Gemini API Key */}
+                    {/* Custom endpoint base URL for Custom provider */}
+                    {apiProvider === "custom" && (
+                      <div>
+                        <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">API 根地址 (API Base URL)</label>
+                        <input
+                          type="text"
+                          placeholder="例如：https://api.siliconflow.cn/v1 或其它中转站反代"
+                          value={customEndpoint}
+                          onChange={(e) => setCustomEndpoint(e.target.value)}
+                          className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 outline-none transition-all placeholder:text-slate-300"
+                        />
+                        <p className="text-[9px] text-slate-400 mt-1 leading-relaxed">
+                          请输入兼容 OpenAI chat/completions 格式的接口代理基准地址。
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Dynamic API Key */}
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider">Google Gemini API 密钥 (Key)</label>
-                        <a 
-                          href="https://aistudio.google.com/apikey" 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          className="text-[10px] text-indigo-500 hover:underline flex items-center gap-0.5"
-                        >
-                          获取免费密钥 <ArrowRight className="w-2.5 h-2.5" />
-                        </a>
+                        <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider">
+                          {apiProvider === "gemini" 
+                            ? "Google Gemini API 密钥 (Key)" 
+                            : apiProvider === "openai" 
+                              ? "OpenAI API 密钥 (API Key)" 
+                              : apiProvider === "deepseek" 
+                                ? "DeepSeek API 密钥 (API Key)" 
+                                : "API 访问密钥 (API Key)"}
+                        </label>
+                        {apiProvider === "gemini" && (
+                          <a 
+                            href="https://aistudio.google.com/apikey" 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="text-[10px] text-indigo-500 hover:underline flex items-center gap-0.5"
+                          >
+                            获取免费密钥 <ArrowRight className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                        {apiProvider === "deepseek" && (
+                          <a 
+                            href="https://platform.deepseek.com" 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="text-[10px] text-indigo-500 hover:underline flex items-center gap-0.5"
+                          >
+                            极速获取密钥 <ArrowRight className="w-2.5 h-2.5" />
+                          </a>
+                        )}
                       </div>
                       <input
                         type="password"
-                        placeholder="请输入您的 AIzaSy..."
+                        placeholder={
+                          apiProvider === "gemini" 
+                            ? "请输入您的 AIzaSy..." 
+                            : apiProvider === "openai" 
+                              ? "请输入您的 sk-..." 
+                              : apiProvider === "deepseek" 
+                                ? "请输入您的 sk-..." 
+                                : "请输入对应中转站的 API 访问凭证 Key..."
+                        }
                         value={clientApiKey}
                         onChange={(e) => setClientApiKey(e.target.value)}
                         className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 outline-none transition-all placeholder:text-slate-300"
@@ -1297,19 +1424,49 @@ Return your result strictly in the requested JSON structure. Do not include mark
                     {/* Model Selector */}
                     <div>
                       <label className="block text-xs font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">选择大模型版本 (Model Selection)</label>
-                      <select
-                        value={selectedModel}
-                        onChange={(e) => setSelectedModel(e.target.value)}
-                        className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all font-bold text-slate-700 cursor-pointer"
-                      >
-                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (超灵敏 - 响应快推荐)</option>
-                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (超高准确度 - 品质强荐)</option>
-                        <option value="gemini-1.5-flash">Gemini 1.5 Flash (经典轻量引擎)</option>
-                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (精细翻译引擎)</option>
-                      </select>
+                      {apiProvider !== "custom" ? (
+                        <select
+                          value={selectedModel}
+                          onChange={(e) => setSelectedModel(e.target.value)}
+                          className="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 outline-none focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 transition-all font-bold text-slate-700 cursor-pointer"
+                        >
+                          {apiProvider === "gemini" && (
+                            <>
+                              <option value="gemini-2.5-flash">Gemini 2.5 Flash (超灵敏 - 响应快推荐)</option>
+                              <option value="gemini-2.5-pro">Gemini 2.5 Pro (超高准确度 - 品质强荐)</option>
+                              <option value="gemini-1.5-flash">Gemini 1.5 Flash (经典轻量引擎)</option>
+                              <option value="gemini-1.5-pro">Gemini 1.5 Pro (精细翻译引擎)</option>
+                            </>
+                          )}
+                          {apiProvider === "openai" && (
+                            <>
+                              <option value="gpt-4o-mini">GPT-4o Mini (最轻便推荐 - 翻译高性价比)</option>
+                              <option value="gpt-4o">GPT-4o (王牌全能大模型 - 精细卓越)</option>
+                              <option value="gpt-3.5-turbo">GPT-3.5 Turbo (经典高效率引擎)</option>
+                            </>
+                          )}
+                          {apiProvider === "deepseek" && (
+                            <>
+                              <option value="deepseek-chat">DeepSeek V3 (极低售价 / 高拟人度 - 强力推荐)</option>
+                              <option value="deepseek-coder">DeepSeek-Coder (专业技术语境)</option>
+                            </>
+                          )}
+                        </select>
+                      ) : (
+                        <div>
+                          <input
+                            type="text"
+                            placeholder="例如：deepseek-chat 或 gpt-4o-mini 或 claude-3-5-sonnet 等"
+                            value={selectedModel}
+                            onChange={(e) => setSelectedModel(e.target.value)}
+                            className="w-full text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400 outline-none transition-all placeholder:text-slate-400 font-bold"
+                          />
+                          <p className="text-[9px] text-slate-400 mt-1 leading-relaxed">
+                            请输入该自定义接口支持的 exact 模型标识（Model ID）。
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  </>
-                )}
 
                 {/* Temperature slider */}
                 <div>
@@ -1356,14 +1513,16 @@ Return your result strictly in the requested JSON structure. Do not include mark
                 <button
                   type="button"
                   onClick={() => {
-                    setLlmMode("system");
+                    setApiProvider("gemini");
                     setClientApiKey("");
                     setSelectedModel("gemini-2.5-flash");
+                    setCustomEndpoint("");
                     setTemperature(0.3);
                     setCustomPrompt("");
-                    localStorage.removeItem("yiren_llm_mode");
+                    localStorage.removeItem("yiren_api_provider");
                     localStorage.removeItem("yiren_client_api_key");
                     localStorage.removeItem("yiren_selected_model");
+                    localStorage.removeItem("yiren_custom_endpoint");
                     localStorage.removeItem("yiren_temperature");
                     localStorage.removeItem("yiren_custom_prompt");
                     setIsSettingsOpen(false);
@@ -1375,9 +1534,10 @@ Return your result strictly in the requested JSON structure. Do not include mark
                 <button
                   type="button"
                   onClick={() => {
-                    localStorage.setItem("yiren_llm_mode", llmMode);
+                    localStorage.setItem("yiren_api_provider", apiProvider);
                     localStorage.setItem("yiren_client_api_key", clientApiKey);
                     localStorage.setItem("yiren_selected_model", selectedModel);
+                    localStorage.setItem("yiren_custom_endpoint", customEndpoint);
                     localStorage.setItem("yiren_temperature", temperature.toString());
                     localStorage.setItem("yiren_custom_prompt", customPrompt);
                     setIsSettingsOpen(false);
