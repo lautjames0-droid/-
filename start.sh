@@ -23,8 +23,15 @@ fi
 echo ""
 echo "[2/2] 依赖安装成功！正在启动本地开发服务器..."
 echo ""
-echo "提示：启动成功后，请在浏览器中打开 http://localhost:3000"
+echo "提示：正在默认浏览器中自动为您打开 http://localhost:3000"
 echo "=========================================="
 echo ""
+
+# 自动在默认浏览器中打开页面
+if command -v open &> /dev/null; then
+    open "http://localhost:3000"
+elif command -v xdg-open &> /dev/null; then
+    xdg-open "http://localhost:3000"
+fi
 
 npm run dev
