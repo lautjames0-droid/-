@@ -1,11 +1,92 @@
-<div align="center">
+# 亦仁翻译 (Yiren Translate) - 智能 AI 翻译专家 & PWA
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+基于大语言模型的智能、优雅、贴心的翻译专家。不仅具有强大的多语种意译能力，还全面支持 **PWA (Progressive Web Application) 本地安装** 并在右上角提供了强大的 **“设置”中枢**，支持自主配置独立大语言模型，实现零服务器环境的本地安全运行！
 
-  <h1>Built with AI Studio</h2>
+---
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## 🌟 核心亮点与特色功能
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+### 1. 多语种专业翻译与自动检测
+全力支持以下众多主流语言的互译与多情境适配：
+*   **多国语言支持**：中文 (zh)、英文 (en)、印尼文 (id)、泰语 (th)、越南语 (vi)、菲律宾语 (fil)、俄语 (ru)、西班牙语 (es)、葡萄牙语 (pt)。
+*   **一键自动检测 (Auto Detect)**：智能判断输入语言，为您省时省心。
+*   **语音输入与双语配音**：支持麦克风输入识别及多国语言的高清 TTS (语音合成) 朗读播放。
 
-</div>
+### 2. 双重 LLM 连接模式 (右上角「设置」)
+*   ☁️ **系统内置服务**：默认推荐模式。由系统安全中转服务驱动，开箱即用，无需任何额外配置，由内置的 Gemini 3.5 Flash 翻译引擎提供稳定、快速的响应。
+*   🔌 **独立配置模式 (零服务器)**：面向极客或需要极高独立性的用户。您可以点击右上角「设置」，输入您申请的 **Google Gemini API Key**。激活后，应用将完全绕过中间服务器，在浏览器本地通过 HTTPS 直接向 Google API 节点查询。
+    *   **大模型切换**：支持自主选择 `Gemini 2.5 Flash` (超灵敏推荐) 或 `Gemini 2.5 Pro` (高精准度精益译)。
+    *   **个性化附加提示词**：可通过自定义 Prompt 约束翻译风格。例如：*"请将专业术语严格按照行业规范在目标语言中对齐"*。
+    *   **创意发散度控制**：通过 `Temperature` 滚动条在“精确意译 (0.0)”到“拟人润色 (1.0)”之间平滑调整。
+    *   **安全保障**：您的 API Key 只加密储存在您本地浏览器的 `LocalStorage` 中，百分之百对第三方保密。
+
+### 3. PWA 支持（全隔离自由安装）
+*   **离线与缓存**：已配置完整的 `Service Worker` 离线缓存、`manifest.json` 应用元数据和高清 512x512 应用图标。
+*   **本端应用化**：在支持 PWA 的桌面浏览器 (Chrome/Edge/Safari 等) 或手机浏览器上点击地址栏右侧的“安装”图标，即可将“亦仁翻译”作为原生独立 App 沉浸式安装到您的电脑桌面上或手机首屏上！
+
+---
+
+## 💻 本地开发与启动指南
+
+项目采用 **Vite + React (TypeScript) + Tailwind CSS** 作为前端，并使用 **Express** 提供了健壮的后端代理中转。
+
+### 1. 准备工作
+确保您的电脑上已安装 [Node.js](https://nodejs.org/)（建议版本 18 或更高）。
+
+### 2. 安装依赖
+在项目根目录下通过终端终端运行：
+```bash
+npm install
+```
+
+### 3. 配置环境变量 (可选，若要使用系统内置服务)
+在项目根目录下，创建一个 `.env` 文件（或将 `.env.example` 复制为 `.env`）：
+```env
+# 您的全局 Gemini 开发者密钥，用于支撑“系统内置服务”后端
+GEMINI_API_KEY=您的_GEMINI_API_KEY_在这里
+```
+
+### 4. 启动本地开发服务
+运行以下命令启动支持热重载的开发联调服务器：
+```bash
+npm run dev
+```
+启动成功后，在浏览器中访问 http://localhost:3000 即可。
+
+### 5. 生产构建与启动
+在需要部署运行或进行生产环境打包时：
+*   **编译构建**：
+    ```bash
+    npm run build
+    ```
+    此命令会打包前端静态文件到 `dist/`，同时利用 esbuild 将 `server.ts` 编译为无多余相对路径依赖的单文件、高性能 `dist/server.cjs` 模块。
+*   **启动服务**：
+    ```bash
+    npm run start
+    ```
+    启动后直接承载商用流量。
+
+---
+
+## 📦 如何从当前 AI Studio 中导出和迁移项目？
+
+如果您在目前的在线编辑器左侧没有直观看到“Export to ZIP”按钮，不要担心，这是由于平台的 UI 分类升级。您可以采用以下几种非常稳定便捷的方式将整个工程文件完整带走：
+
+### 方法 A：通过关联 GitHub 仓库（黄金推荐）
+1. 打开 AI Studio 界面右上角的 **Settings** 或者齿轮管理面板。
+2. 找到首选的 **Link to GitHub** 或 **Export to GitHub** 选项。
+3. 按照提示授权，应用将会把本地的全部精美代码直接推送并克隆至您的个人私有/公有 GitHub 仓库中。
+4. 随后在您本地终端执行 `git clone <您的仓库链接>` 即可在几秒内无缝在本地接管开发！
+
+### 方法 B：通过 Git 或终端指令手动下载
+当前容器内置了标准的 Linux 开发环境，如果您希望纯命令行快速打包：
+1. 您可以通过平台自带的命令行终端工具。
+2. 运行打包命令以直接打包所有业务代码和配置文件：
+   ```bash
+   tar -czf project.tar.gz --exclude=node_modules --exclude=.next --exclude=dist .
+   ```
+3. 打包完成后，在左侧文件浏览树内右键点击生成的 `project.tar.gz` 文件，选择 **Download (下载)** 即可安全保存到本地解压使用。
+
+---
+
+祝您使用愉快！如有新想法，随时可继续与我交流迭代！✨

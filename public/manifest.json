@@ -1,0 +1,17 @@
+{
+  "name": "亦仁翻译 Status & Translate",
+  "short_name": "亦仁翻译",
+  "description": "基于大语言模型的智能、优雅、贴心的翻译专家",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-512.jpg",
+      "type": "image/jpeg",
+      "sizes": "512x512"
+    }
+  ]
+}
