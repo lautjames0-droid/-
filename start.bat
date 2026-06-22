@@ -16,13 +16,18 @@ if %errorlevel% neq 0 (
 echo 正在桌面上自动为您生成【亦仁翻译】一键启动快捷方式...
 powershell -Command "$s=(New-Object -ComObject WScript.Shell);$d=$s.SpecialFolders('Desktop');$lnk=$s.CreateShortcut(\"$d\亦仁翻译一键启动.lnk\");$lnk.TargetPath=\"%~dp0start.bat\";$lnk.WorkingDirectory=\"%~dp0\";$lnk.IconLocation=\"shell32.dll,220\";$lnk.Save()" >nul 2>nul
 
-echo [1/2] 正在自动执行依赖安装 (npm install)...
-call npm install
+:: 检查是否已经存在 node_modules 依赖目录
+if exist node_modules (
+    echo [1/2] 检测到本地 node_modules 依赖已存在，自动跳过安装步骤以节省时间！
+) else (
+    echo [1/2] 未检测到本地依赖目录，正在为您自动执行依赖安装 (npm install)...
+    call npm install
 
-if %errorlevel% neq 0 (
-    echo [错误] 依赖安装失败，请检查网络连接或重试！
-    pause
-    exit /b
+    if %errorlevel% neq 0 (
+        echo [错误] 依赖安装失败，请检查网络连接或重试！
+        pause
+        exit /b
+    )
 )
 
 echo.

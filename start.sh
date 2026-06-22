@@ -12,12 +12,17 @@ then
     exit 1
 fi
 
-echo "[1/2] 正在自动执行依赖安装 (npm install)..."
-npm install
+# 检查是否已经存在 node_modules 依赖目录
+if [ -d "node_modules" ]; then
+    echo "[1/2] 检测到本地 node_modules 依赖已存在，自动跳过安装步骤以节省时间！"
+else
+    echo "[1/2] 未检测到本地依赖目录，正在为您自动执行依赖安装 (npm install)..."
+    npm install
 
-if [ $? -ne 0 ]; then
-    echo "[错误] 依赖安装失败，请检查网络连接或重试！"
-    exit 1
+    if [ $? -ne 0 ]; then
+        echo "[错误] 依赖安装失败，请检查网络连接或重试！"
+        exit 1
+    fi
 fi
 
 echo ""
